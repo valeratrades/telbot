@@ -1,15 +1,3 @@
-let
-  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/24.05.tar.gz") {};
-in pkgs.mkShell {
-  packages = [
-    (pkgs.python3.withPackages (python-pkgs: with python-pkgs; [
-      requests
-			python-telegram-bot
-    ]))
-  ];
-}
-
-
 {
   inputs = {
     nixpkgs.url = "https://github.com/NixOS/nixpkgs/archive/24.05.tar.gz";
@@ -36,8 +24,6 @@ in pkgs.mkShell {
 
           shellHook =
             ''
-						cp -f ${(import v-utils.hooks.treefmt {inherit pkgs;})} ./.treefmt.toml
-
 						cp -f ${(import v-utils.files.gitignore) { inherit pkgs; langs = ["py"];}} ./.gitignore
 						'';
         };

@@ -1,0 +1,51 @@
+line-length = 210
+indent-width = 2
+src = ["src", "test"]
+
+[format]
+quote-style = "double"
+indent-style = "tab"
+docstring-code-format = true
+skip-magic-trailing-comma = false
+
+[lint.isort]
+combine-as-imports = true
+required-imports = ["from __future__ import annotations"]
+
+[lint]
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+task-tags = ["TODO", "FIXME", "Q", "BUG", "NB"]
+ignore = [
+    "E262",  # no-space-after-inline-comment
+    "E713",
+    "F403",
+    "E401",
+    "E714",  # `${value} is not` instead of `not ${value} is`
+    "E722",
+    "E703",  # don't compain abot my precious semicolons
+    "E741",  # Ambiguous var name (I'm a Golang man)
+    "F405",  # Warns when using anything from start imports
+    "E501",  # Line length regulated by formatter
+    "D401",  # Relax NumPy docstring convention
+    "PT011", # pytest.raises too broad
+    "SIM102", # Use single `if` instead of nested
+    "SIM108", # Use ternary operator
+    "RUF005", # unpack-instead-of-concatenating-to-collection-literal
+    "D105",  # Missing docstring in magic method
+    "D100",  # Missing docstring in public module
+    "D104",  # Missing docstring in public package
+    "TD002",  # Missing author in TODO
+    "TD003",  # Missing issue link after TODO
+    "TRY003", # Avoid long messages outside exception class
+    "D206",
+    "W191",
+]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["D100", "D103", "B018", "FBT001"]
+
+[lint.pydocstyle]
+convention = "numpy"

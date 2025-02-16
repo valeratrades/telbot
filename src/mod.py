@@ -1,13 +1,20 @@
 import requests
 import asyncio
 import sqlite3
-import json
 from datetime import datetime, timedelta
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
-import time
-import threading
-import logging
+import time, threading, logging
+from .mod import data_dir
+from .config import *
+
+# python doesn't have `pub/private` distinction, which makes scopes confusing, so I prefer to at least prepend everything that will be shared across module boundary with `pub (or PUB/Pub)`
+PUB_APP_NAME = "telbot"
+PUB_DB_FNAME = "crypto_bot.db"
+
+BASE_URL_BINANCE = "https://fapi.binance.com"
+THRESHOLDS = [0.01, 0.04, 0.09, 0.20]  # Пороги змін: 2%, 4%, 9%, 20%
+CHECK_INTERVAL = 1.5  # Обмеження Binance - 1 раз на 1.5 секунди
 
 
 # Перевірка наявності символу на Binance
@@ -25,12 +32,12 @@ def get_current_price(symbol):
 
 # Створення з'єднання з базою даних
 def create_connection():
-	conn = sqlite3.connect("crypto_bot.db")
+	conn = sqlite3.connect(data_dir() + PUB_DB_FNAME)
 	return conn
 
 
 # Перевірка алертів в базі даних
-def check_alerts():
+def check_alerts(config: Config):
 	conn = create_connection()
 	cursor = conn.cursor()
 
@@ -55,7 +62,7 @@ def check_alerts():
 
 		if current_price is not None and current_price >= alert_price:
 			message = f"🚨 {symbol} досяг {alert_price}$! Поточна ціна: {current_price}$."
-			send_telegram_message(chat_id, message)
+			send_telegram_message(config, chat_id, message)
 
 			# Видаляємо алерт після сповіщення
 			delete_alert(alert_id)
@@ -64,24 +71,10 @@ def check_alerts():
 
 
 # Функція для надсилання повідомлень у Telegram
-def send_telegram_message(chat_id, message):
-	bot_token = "7567505791:AAE5Yqbd7gG9ydsx2_inJJmnS1Ln6rmh2Ts"
-	url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+def send_telegram_message(config: Config, chat_id, message):
+	url = f"https://api.telegram.org/bot{config.token}/sendMessage"
 	payload = {"chat_id": chat_id, "text": message}
 	requests.post(url, data=payload)
-
-
-# Перевірка алертів періодично
-def check_alerts_periodically():
-	while True:
-		check_alerts()  # Перевіряємо алерти
-		time.sleep(3)  # Чекаємо 3 секунди перед наступною перевіркою
-
-
-# Запуск перевірки в окремому потоці
-alert_thread = threading.Thread(target=check_alerts_periodically)
-alert_thread.daemon = True
-alert_thread.start()
 
 
 # Додавання нового алерта в базу даних
@@ -165,44 +158,33 @@ async def check_alert_command(update, context):
 		await update.message.reply_text(f"Не знайдено алерта для {symbol} на ціну {price}$.")
 
 
-TOKEN = "7567505791:AAE5Yqbd7gG9ydsx2_inJJmnS1Ln6rmh2Ts"
-# Створення додатка для бота
-application = Application.builder().token(TOKEN).build()
-
-# Додаємо обробники команд
-application.add_handler(CommandHandler("addalert", add_alert_command))
-application.add_handler(CommandHandler("checkalert", check_alert_command))
-
 # Запускаємо бота
 if __name__ == "__main__":
+	config = pub_load_config()
+
+	# Перевірка алертів періодично
+	def check_alerts_periodically():
+		config = pub_load_config()
+		while True:
+			check_alerts(config)  # Перевіряємо алерти
+			time.sleep(3)  # Чекаємо 3 секунди перед наступною перевіркою
+
+	# TODO: take alongside the rest of db-related stuff and shove into its own module
+	# Запуск перевірки в окремому потоці
+	alert_thread = threading.Thread(target=check_alerts_periodically)
+	alert_thread.daemon = True
+	alert_thread.start()
+
+	# Створення додатка для бота
+	application = Application.builder().token(config.token).build()
+
+	# Додаємо обробники команд
+	application.add_handler(CommandHandler("addalert", add_alert_command))
+	application.add_handler(CommandHandler("checkalert", check_alert_command))
+
 	application.run_polling()
 
-# Завантаження токену та Chat ID
-CHAT_ID_FILE = "chat_ids.json"
-try:
-	with open(CHAT_ID_FILE, "r") as file:
-		config = json.load(file)
-except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-	print(f"Помилка завантаження JSON: {e}")
-	config = {"TOKEN": "", "CHAT_ID": []}
-	with open(CHAT_ID_FILE, "w") as file:
-		json.dump(config, file)
-
-TOKEN = config.get("TOKEN", "")
-CHAT_IDS = config.get("CHAT_ID", [])
-
-if not TOKEN:
-	raise ValueError("Токен не знайдено або він порожній!")
-
-BASE_URL = "https://fapi.binance.com"
-ENDPOINT = "/fapi/v1/ticker/price"
-THRESHOLDS = [0.01, 0.04, 0.09, 0.20]  # Пороги змін: 2%, 4%, 9%, 20%
-CHECK_INTERVAL = 1.5  # Обмеження Binance - 1 раз на 1.5 секунди
-
-bot = Bot(token=TOKEN)
-
-# Словник для зберігання цін за ключем символу
-price_history = {}
+bot = Bot(token=config.token)
 
 # Налаштування логування
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -213,7 +195,7 @@ logger = logging.getLogger()
 async def get_current_prices():
 	try:
 		logger.debug("Відправляється запит до API Binance для отримання цін...")
-		response = requests.get(BASE_URL + ENDPOINT, timeout=5)
+		response = requests.get(BASE_URL_BINANCE + "/fapi/v1/ticker/price", timeout=5)
 		logger.debug(f"Запит до API Binance, статус-код: {response.status_code}")
 
 		if response.status_code == 200:
@@ -229,7 +211,7 @@ async def get_current_prices():
 
 
 # Оновлення функції для перевірки змін ціни
-async def check_price_changes(new_prices):
+async def check_price_changes(config: Config, price_history, new_prices):
 	now = datetime.now()
 	messages = []
 
@@ -268,15 +250,15 @@ async def check_price_changes(new_prices):
 				logger.info(f"Відправлено сповіщення: {message}")
 				break
 
-	await send_notifications(messages)
+	await send_notifications(config, messages)
 
 
 # Оновлена функція для надсилання повідомлень
-async def send_notifications(messages):
+async def send_notifications(config: Config, messages):
 	if messages:
 		full_message = "\n".join(messages)  # Об'єднуємо повідомлення в одне
 		logger.debug(f"Готуємо повідомлення для надсилання: {full_message}")
-		for chat_id in CHAT_IDS:
+		for chat_id in config.chat_ids:
 			try:
 				await bot.send_message(chat_id=chat_id, text=full_message)
 				logger.info(f"Сповіщення відправлено до {chat_id}: {full_message}")
@@ -285,8 +267,12 @@ async def send_notifications(messages):
 
 
 async def main():
+	config = pub_load_config()
+	# Словник для зберігання цін за ключем символу
+	price_history = {}  # TODO: make into a proper struct with well-defined set of fields, I promise you will end up suffering eventually due to not having fields strictly defined
+
 	while True:
 		new_prices = await get_current_prices()
 		if new_prices:
-			await check_price_changes(new_prices)
+			await check_price_changes(config, price_history, new_prices)
 		await asyncio.sleep(CHECK_INTERVAL)

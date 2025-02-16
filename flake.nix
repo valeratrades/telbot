@@ -19,6 +19,7 @@
 						(pkgs.python3.withPackages (python-pkgs: with python-pkgs; [
 							requests
 							python-telegram-bot
+							nest-asyncio
 						]))
 					];
 

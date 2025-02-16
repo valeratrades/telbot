@@ -1,9 +1,9 @@
-from .mod import PUB_APP_NAME
+from .lib import PUB_APP_NAME
 from pathlib import Path
 import os
 
 
-def path_data_dir() -> Path:
+def pub_data_dir() -> Path:
 	"""Data dir by xdg standard (and whatever windows has)"""
 
 	path: Path = None  # how is this legal

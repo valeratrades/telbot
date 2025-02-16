@@ -5,16 +5,18 @@ from datetime import datetime, timedelta
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
 import time, threading, logging
-from .mod import data_dir
 from .config import *
-
-# python doesn't have `pub/private` distinction, which makes scopes confusing, so I prefer to at least prepend everything that will be shared across module boundary with `pub (or PUB/Pub)`
-PUB_APP_NAME = "telbot"
-PUB_DB_FNAME = "crypto_bot.db"
+from .utils import pub_data_dir
+from .lib import PUB_DB_FNAME
 
 BASE_URL_BINANCE = "https://fapi.binance.com"
 THRESHOLDS = [0.01, 0.04, 0.09, 0.20]  # Пороги змін: 2%, 4%, 9%, 20%
 CHECK_INTERVAL = 1.5  # Обмеження Binance - 1 раз на 1.5 секунди
+
+# There is no good place to put this (python is a mess), so at least keep it alongside the other globals at the very top (notice that you ran into the well exactly because you had a random blocking thing outside of the main control flow)
+# Налаштування логування
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger()
 
 
 # Перевірка наявності символу на Binance
@@ -32,7 +34,7 @@ def get_current_price(symbol):
 
 # Створення з'єднання з базою даних
 def create_connection():
-	conn = sqlite3.connect(data_dir() + PUB_DB_FNAME)
+	conn = sqlite3.connect(pub_data_dir() + PUB_DB_FNAME)
 	return conn
 
 
@@ -184,12 +186,6 @@ if __name__ == "__main__":
 
 	application.run_polling()
 
-bot = Bot(token=config.token)
-
-# Налаштування логування
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger()
-
 
 # Оновлена функція для отримання поточних цін з Binance
 async def get_current_prices():
@@ -211,7 +207,7 @@ async def get_current_prices():
 
 
 # Оновлення функції для перевірки змін ціни
-async def check_price_changes(config: Config, price_history, new_prices):
+async def check_price_changes(config: Config, bot: Bot, price_history, new_prices):
 	now = datetime.now()
 	messages = []
 
@@ -250,11 +246,11 @@ async def check_price_changes(config: Config, price_history, new_prices):
 				logger.info(f"Відправлено сповіщення: {message}")
 				break
 
-	await send_notifications(config, messages)
+	await send_notifications(config, bot, messages)
 
 
 # Оновлена функція для надсилання повідомлень
-async def send_notifications(config: Config, messages):
+async def send_notifications(config: Config, bot: Bot, messages):
 	if messages:
 		full_message = "\n".join(messages)  # Об'єднуємо повідомлення в одне
 		logger.debug(f"Готуємо повідомлення для надсилання: {full_message}")
@@ -270,9 +266,10 @@ async def main():
 	config = pub_load_config()
 	# Словник для зберігання цін за ключем символу
 	price_history = {}  # TODO: make into a proper struct with well-defined set of fields, I promise you will end up suffering eventually due to not having fields strictly defined
+	bot = Bot(token=config.token)
 
 	while True:
 		new_prices = await get_current_prices()
 		if new_prices:
-			await check_price_changes(config, price_history, new_prices)
+			await check_price_changes(config, bot, price_history, new_prices)
 		await asyncio.sleep(CHECK_INTERVAL)

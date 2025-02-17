@@ -25,7 +25,7 @@
 
           shellHook =
             ''
-						cp -f ${(import v-utils.files.gitignore) { inherit pkgs; langs = ["py"];}} ./.gitignore
+							cp -f ${(v-utils.files { inherit pkgs; gitignoreLangs = ["py"]; }).gitignore} ./.gitignore
 						'';
         };
       }
